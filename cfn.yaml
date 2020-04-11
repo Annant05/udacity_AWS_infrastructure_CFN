@@ -1,0 +1,206 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Template for deploying simple infrastructure with LB, AutoScaling, 
+  Health check, SG, Listener and Target Group  for Udacity Project.
+
+Mappings:
+  RegionMap:
+    us-east-1:
+      AMI: "ami-07ebfd5b3428b6f4d"
+
+Resources:
+  # add one launch config
+  # add one VPC
+  # add one Subnet
+  # add one security group
+  # add one autoscalig group
+  # add one elastic load balancer
+  # add one target group
+
+  # VPC
+  InfraVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.10.0.0/16
+      EnableDnsSupport: "true"
+      EnableDnsHostnames: "true"
+      InstanceTenancy: default
+      Tags:
+        - Key: name
+          Value: InfraVPC
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGatewayVPC
+      VpcId: !Ref InfraVPC
+
+  InternetGatewayVPC:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: InternetGatewayVPC
+
+  PublicIGWRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayVPC
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref  InternetGatewayVPC
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref InfraVPC
+      Tags:
+        - Key: foo
+          Value: bar
+
+  PublicSub1RT:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1 #required
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref InfraVPC
+      CidrBlock: 10.10.1.0/24
+      AvailabilityZone: "us-east-1a"
+      Tags:
+        - Key: name
+          Value: InfraVPC
+
+  PublicSub2RT:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref InfraVPC
+      CidrBlock: 10.10.2.0/24
+      AvailabilityZone: "us-east-1b"
+      Tags:
+        - Key: name
+          Value: InfraVPC
+
+  # PrivateRoute:
+  #   Type: AWS::EC2::Route
+  #   Properties:
+  #     RouteTableId: !Ref PrivateRouteTable
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref InfraVPC
+      Tags:
+        - Key: foo
+          Value: bar
+
+  PrivateSub1RT:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet1
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref InfraVPC
+      CidrBlock: 10.10.3.0/24
+      AvailabilityZone: "us-east-1a"
+      Tags:
+        - Key: name
+          Value: InfraVPC
+
+  PrivateSub2RT:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet2
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref InfraVPC
+      CidrBlock: 10.10.4.0/24
+      AvailabilityZone: "us-east-1b"
+      Tags:
+        - Key: name
+          Value: InfraVPC
+
+
+  SGAllowHTTP:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow http to client host
+      VpcId: !Ref InfraVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  SGAllowSSH:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow SSH to client host
+      VpcId: !Ref InfraVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+
+  # launch config
+  WebSeverLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      LaunchConfigurationName: WebSeverLaunchConfig
+      AssociatePublicIpAddress: true
+      ImageId: "ami-07ebfd5b3428b6f4d" #!FindInMap [RegionMap, !Ref "AWS::Region", AMI]
+      # EbsOptimized: true|false
+      # InstanceMonitoring: true|false
+      InstanceType: t3a.nano
+      KeyName: cfn-infra-udacity
+      SecurityGroups:
+        - !Ref SGAllowHTTP
+        - !Ref SGAllowSSH
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          apt update -y
+          apt install -y apache2
+          cd /var/www/html
+          echo "hello Annant" > index.html
+
+  # autoscaling group
+  WebAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      LaunchConfigurationName: !Ref "WebSeverLaunchConfig"
+      MinSize: "1"
+      MaxSize: "2"
+      AvailabilityZones:
+        - "us-east-1a"
+        - "us-east-1b"
+      # LoadBalancerNames:
+      #   - Ref: "myLoadBalancer"
+      Tags:
+        - Key: Environment
+          Value: Production
+          PropagateAtLaunch: "true"
+        - Key: Purpose
+          Value: WebServerGroup
+          PropagateAtLaunch: "false"
+      VPCZoneIdentifier:
+        - !Ref "PublicSubnet1"
+        - !Ref "PublicSubnet2"
+        # - !Ref "PrivateSubnet1"
+        # - !Ref "PrivateSubnet2"
