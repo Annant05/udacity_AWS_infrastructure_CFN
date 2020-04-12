@@ -68,7 +68,9 @@ Resources:
     Properties:
       VpcId: !Ref InfraVPC
       CidrBlock: 10.10.1.0/24
-      AvailabilityZone: "us-east-1a"
+      AvailabilityZone: !Select 
+        - 0
+        - Fn::GetAZs: !Ref 'AWS::Region'
       Tags:
         - Key: Name
           Value: PublicSubnet1
@@ -84,7 +86,9 @@ Resources:
     Properties:
       VpcId: !Ref InfraVPC
       CidrBlock: 10.10.2.0/24
-      AvailabilityZone: "us-east-1b"
+      AvailabilityZone: !Select 
+        - 1
+        - Fn::GetAZs: !Ref 'AWS::Region'
       Tags:
         - Key: Name
           Value: PublicSubnet2
@@ -113,7 +117,9 @@ Resources:
     Properties:
       VpcId: !Ref InfraVPC
       CidrBlock: 10.10.3.0/24
-      AvailabilityZone: "us-east-1a"
+      AvailabilityZone: !Select 
+        - 0
+        - Fn::GetAZs: !Ref 'AWS::Region'
       Tags:
         - Key: Name
           Value: PrivateSubnet1
@@ -129,7 +135,9 @@ Resources:
     Properties:
       VpcId: !Ref InfraVPC
       CidrBlock: 10.10.4.0/24
-      AvailabilityZone: "us-east-1b"
+      AvailabilityZone: !Select 
+        - 1
+        - Fn::GetAZs: !Ref 'AWS::Region'
       Tags:
         - Key: Name
           Value: PrivateSubnet2
@@ -170,7 +178,7 @@ Resources:
     Properties:
       LaunchConfigurationName: WebSeverLaunchConfig
       AssociatePublicIpAddress: true
-      ImageId: "ami-07ebfd5b3428b6f4d" #!FindInMap [RegionMap, !Ref "AWS::Region", AMI]
+      ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", AMI]
       # EbsOptimized: true|false
       # InstanceMonitoring: true|false
       InstanceType: t3a.nano
@@ -188,29 +196,90 @@ Resources:
 
   # autoscaling group
   WebAutoScalingGroup:
-    Type: AWS::AutoScaling::AutoScalingGroup
+    Type: "AWS::AutoScaling::AutoScalingGroup"
     Properties:
-      LaunchConfigurationName: !Ref "WebSeverLaunchConfig"
-      MinSize: "1"
-      MaxSize: "2"
-      AvailabilityZones:
-        - "us-east-1a"
-        - "us-east-1b"
-      # LoadBalancerNames:
-      #   - Ref: "myLoadBalancer"
+      AutoScalingGroupName: WebAutoScalingGroup
+      AvailabilityZones:  
+        - !Select 
+          - 0
+          - Fn::GetAZs: !Ref 'AWS::Region'
+        - !Select 
+          - 1
+          - Fn::GetAZs: !Ref 'AWS::Region'
+
+        # - "us-east-1a"
+        # - "us-east-1b"       
+      DesiredCapacity: "2"
+      HealthCheckGracePeriod: 30
+      HealthCheckType: ELB
+      LaunchConfigurationName: !Ref WebSeverLaunchConfig
+      MaxSize: "4" #required
+      MinSize: "2" #required
+      # NotificationConfigurations:
+      #   - NotificationConfiguration
       Tags:
         - Key: Environment
           Value: Production
           PropagateAtLaunch: true
-        - Key: Purpose
+        - Key: Name
           Value: WebServerGroup
           PropagateAtLaunch: false
-
+      TargetGroupARNs:
+        - !Ref WebALBTargetGroup
       VPCZoneIdentifier:
-        - !Ref "PublicSubnet1"
-        - !Ref "PublicSubnet2"
-        # - !Ref "PrivateSubnet1"
-        # - !Ref "PrivateSubnet2"
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+
+  WebServerALB:
+    Type: "AWS::ElasticLoadBalancingV2::LoadBalancer"
+    Properties:
+      IpAddressType: ipv4
+      Name: WebServerALB
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref SGAllowHTTP
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      Tags:
+        - Key: Name
+          Value: WebServerALB
+      Type: application
+
+  WebALBTargetGroup:
+    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+    Properties:
+      HealthCheckEnabled: true
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: HTTP 
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 5
+      Matcher:
+        HttpCode: "200"
+      Name: WebALBTargetGroup
+      Port: 80
+      Protocol: HTTP
+      Tags:
+        - Key: Name
+          Value: WebALBTargetGroup
+      TargetType: instance
+      UnhealthyThresholdCount: 2
+      VpcId: !Ref InfraVPC
+
+
+  WebELBListener:
+    Type: "AWS::ElasticLoadBalancingV2::Listener"
+    Properties:
+      DefaultActions: #required
+        - Type: "forward"
+          TargetGroupArn: !Ref WebALBTargetGroup
+      LoadBalancerArn: !Ref WebServerALB  #required
+      Port: 80 #required
+      Protocol: "HTTP" #required  
+
+
 
 # bastion host 
   BastionHostInstance:
