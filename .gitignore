@@ -1,2 +1,4 @@
 *.pem
 .vscode/
+.vscode/settings.json
+delete_stack.sh

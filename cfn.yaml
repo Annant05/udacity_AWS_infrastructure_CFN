@@ -3,6 +3,13 @@ Description: >-
   Template for deploying simple infrastructure with LB, AutoScaling, 
   Health check, SG, Listener and Target Group  for Udacity Project.
 
+Parameters:
+  BastionKeyPair:
+    Description: Select the key pair for the Bastion host.
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: bastion-host
+    
+
 Mappings:
   RegionMap:
     us-east-1:
@@ -195,7 +202,7 @@ Resources:
     Type: AWS::EC2::Instance
     DependsOn: [InfraVPC]
     Properties:
-      KeyName: bastion-host
+      KeyName: !Ref BastionKeyPair #bastion-host
       ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", AMI]
       InstanceType: t3a.micro
       BlockDeviceMappings:
@@ -244,7 +251,7 @@ Resources:
       # EbsOptimized: true|false
       # InstanceMonitoring: true|false
       InstanceType: t3a.nano
-      KeyName: cfn-infra-udacity
+      # KeyName: !Ref WebServerKeyPair #cfn-infra-udacity
       SecurityGroups:
         - !Ref SGAllowHTTP
         - !Ref SGAllowSSH
@@ -344,3 +351,15 @@ Resources:
       Port: 80 #required
       Protocol: "HTTP" #required
 
+Outputs:
+  LoadBalancerDNS:
+    Description: Displays the DNS of load balancer.
+    Value: !GetAtt WebServerALB.DNSName
+
+  BastionDNS:
+    Description: DNS of bastion Host for SSH.
+    Value: !GetAtt BastionHostInstance.PublicDnsName
+
+  BastionKeyName:
+    Description: SSH key to use for bastion Host.
+    Value: !Ref BastionKeyPair
